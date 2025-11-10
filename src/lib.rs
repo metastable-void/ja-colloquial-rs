@@ -6,7 +6,7 @@ use serde::Deserialize;
 static JSON: &'static str = include_str!("./books.json");
 
 /// Verse of the Christian Bible (in Japanese)
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, PartialEq, Eq, Hash)]
 pub struct Verse {
     /// book short name
     pub b: String,
@@ -54,6 +54,11 @@ pub struct Books {
 }
 
 impl Books {
+    pub fn random_verse(&self) -> Verse {
+        let index = rand::random_range(0..self.verses.len());
+        self.verses[index].clone()
+    }
+
     pub fn get_verse(&self, book: &str, chapter: u8, verse: u8) -> Option<Verse> {
         self.book_indices.get(book)
             .map(|b| b.indices.get(&chapter)).flatten()
@@ -108,5 +113,12 @@ mod test {
             books.get_verse("ge", 4, 13).unwrap().t,
             "カインは主に言った、「わたしの罰は重くて負いきれません。",
         );
+    }
+
+    #[test]
+    fn random() {
+        let books = books();
+        let random = books.random_verse();
+        assert!(books.verses.contains(&random));
     }
 }
