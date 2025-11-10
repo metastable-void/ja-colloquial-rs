@@ -53,6 +53,15 @@ pub struct Books {
     pub book_indices: HashMap<String, BookIndex>,
 }
 
+impl Books {
+    pub fn get_verse(&self, book: &str, chapter: u8, verse: u8) -> Option<Verse> {
+        self.book_indices.get(book)
+            .map(|b| b.indices.get(&chapter)).flatten()
+            .map(|c| c.indices.get(&verse)).flatten()
+            .map(|v| self.verses.get(*v)).flatten().cloned()
+    }
+}
+
 static LOCK: OnceLock<Books> = OnceLock::new();
 
 pub fn books() -> &'static Books {
@@ -96,10 +105,7 @@ mod test {
         let books = books();
         assert!(books.book_names.contains(&"ge".to_string()));
         assert_eq!(
-            books.verses[*books.book_indices.get(&"ge".to_string()).unwrap()
-                .indices.get(&4).unwrap()
-                .indices.get(&13).unwrap()
-            ].t,
+            books.get_verse("ge", 4, 13).unwrap().t,
             "カインは主に言った、「わたしの罰は重くて負いきれません。",
         );
     }
