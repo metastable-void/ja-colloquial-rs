@@ -13,6 +13,7 @@ include = [
     "Cargo.toml",
     "build.rs",
     "build-release.sh",
+    "examples/**",
     "src/**",
     "include/**",
     "README.md",
@@ -26,3 +27,6 @@ crate-type = ["rlib"]
 [profile.capi]
 inherits = "release"
 panic = "abort"
+
+[dev-dependencies]
+getrandom = "0.4.3"

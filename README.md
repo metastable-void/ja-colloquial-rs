@@ -4,9 +4,10 @@ An allocation-free, dependency-free `no_std` Rust library containing the
 Japanese Colloquial Bible.
 
 > [!WARNING]
-> Always call `seed` with an independently generated, unpredictable 16-byte
-> key whenever the target environment can provide one. The default random
-> stream is deterministic and publicly predictable; it is not suitable for
+> Call `seed` as early as possible with an independently generated,
+> unpredictable 16-byte key whenever the target environment can provide one.
+> Only the first call can install a key. The default random stream is
+> deterministic and publicly predictable; it is not suitable for
 > security-sensitive use.
 
 ## Rust usage
@@ -25,8 +26,8 @@ assert_eq!(
     "カインは主に言った、「わたしの罰は重くて負いきれません。",
 );
 
-// Use an unpredictable key in applications that require unpredictability.
-seed([42; 16]);
+// Demonstration only: obtain unpredictable bytes from the target platform.
+assert!(seed([42; 16]));
 let random = BIBLE.random_verse();
 assert!(!random.text().is_empty());
 ```
@@ -37,10 +38,27 @@ accepted. Verse and chapter numbers are 1-based. Missing numbers in the source
 remain missing rather than being synthesized.
 
 The global generator uses the original 128-bit-key ChaCha20 construction. It
-becomes a CSPRNG only after the caller supplies an unpredictable `[u8; 16]` key
-and keeps that key secret. The crate cannot obtain entropy itself because it is
-dependency-free and supports environments without an operating-system random
-source.
+becomes a CSPRNG only when the successful caller supplies an unpredictable
+`[u8; 16]` key and keeps that key secret. The crate cannot obtain entropy itself
+because it is dependency-free and supports environments without an
+operating-system random source.
+
+`seed` returns `true` only when that call installs the process-wide key. Once
+it succeeds, later calls leave the key and generator position unchanged and
+return `false`.
+
+## Command-line example
+
+The `ja-colloquial` example is a `std` executable. Its dev-only `getrandom`
+dependency obtains the seed for random selection; it is not linked into the
+library. Build it with `cargo build --example ja-colloquial`, then use:
+
+```console
+target/debug/examples/ja-colloquial --rand
+target/debug/examples/ja-colloquial -r
+target/debug/examples/ja-colloquial --list-books
+target/debug/examples/ja-colloquial 創世記 4:13
+```
 
 ## C API
 
@@ -60,7 +78,9 @@ UTF-8 text which must not be freed or modified.
 ```c
 #include <ja_colloquial.h>
 
-ja_colloquial_seed(UINT64_C(1), UINT64_C(2));
+if (ja_colloquial_seed(UINT64_C(1), UINT64_C(2)) != 0) {
+    /* Another caller already installed the process-wide key. */
+}
 ja_colloquial_verse_t verse = ja_colloquial_get_verse(
     JA_COLLOQUIAL_BOOK_GENESIS,
     4,
@@ -75,7 +95,8 @@ the command above without a Git checkout.
 Release maintainers can run `./build-release.sh` to build packaged libraries
 for the supported Linux musl, Darwin, FreeBSD, NetBSD, and illumos targets.
 Musl archives contain the static library; other archives contain both static
-and dynamic libraries.
+and dynamic libraries. Every archive also contains `bin/ja-colloquial` and is
+named `ja-colloquial-<version>-<target>.tar.gz`.
 
 ## License and source text
 

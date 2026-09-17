@@ -6,7 +6,9 @@
 - Replaced runtime JSON parsing with validated build-time generation.
 - Added the `BIBLE` API with full Japanese book-name lookup and private verse
   representation.
-- Added a concurrency-safe, explicitly seeded ChaCha20 random verse selector.
+- Added a concurrency-safe ChaCha20 random verse selector with one-time
+  explicit seeding.
+- Added a `std` command-line example using the dev-only `getrandom` dependency.
 - Added conditionally built C `staticlib` and `cdylib` artifacts with a C99/C++
   header.
 - Corrected the Japanese name of Esther and relicensed the project under

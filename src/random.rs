@@ -4,25 +4,26 @@ compile_error!("ja-colloquial requires lock-free 32-bit atomics");
 #[cfg(target_has_atomic = "32")]
 mod supported {
     use core::hint::spin_loop;
-    use core::sync::atomic::{AtomicU32, Ordering};
+    use core::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 
+    static SEEDED: AtomicBool = AtomicBool::new(false);
     static EPOCH: AtomicU32 = AtomicU32::new(0);
     static KEY: [AtomicU32; 4] = [const { AtomicU32::new(0) }; 4];
     static BLOCK_COUNTER: AtomicU32 = AtomicU32::new(0);
 
     const CONSTANTS: [u32; 4] = [0x6170_7865, 0x3120_646e, 0x7962_2d36, 0x6b20_6574];
 
-    pub(crate) fn seed(seed: [u8; 16]) {
+    pub(crate) fn seed(seed: [u8; 16]) -> bool {
+        if SEEDED.load(Ordering::SeqCst) {
+            return false;
+        }
+
         let stable_epoch = loop {
             let epoch = EPOCH.load(Ordering::SeqCst);
             if epoch & 1 != 0 {
                 spin_loop();
                 continue;
             }
-            assert!(
-                epoch < u32::MAX - 1,
-                "ja-colloquial global RNG reseed epoch exhausted"
-            );
             if EPOCH
                 .compare_exchange(epoch, epoch + 1, Ordering::SeqCst, Ordering::SeqCst)
                 .is_ok()
@@ -30,6 +31,11 @@ mod supported {
                 break epoch;
             }
         };
+
+        if SEEDED.load(Ordering::SeqCst) {
+            EPOCH.store(stable_epoch, Ordering::SeqCst);
+            return false;
+        }
 
         for (index, word) in KEY.iter().enumerate() {
             let offset = index * 4;
@@ -44,7 +50,9 @@ mod supported {
             );
         }
         BLOCK_COUNTER.store(0, Ordering::SeqCst);
+        SEEDED.store(true, Ordering::SeqCst);
         EPOCH.store(stable_epoch + 2, Ordering::SeqCst);
+        true
     }
 
     fn reserve_block() -> ([u32; 4], u32) {
@@ -185,13 +193,24 @@ mod supported {
 
         #[test]
         fn global_protocol() {
-            seed([0x5a; 16]);
-            let first: Vec<_> = (0..32).map(|_| random_index(31_086)).collect();
-            seed([0x5a; 16]);
-            let second: Vec<_> = (0..32).map(|_| random_index(31_086)).collect();
-            assert_eq!(first, second);
+            let seeders: Vec<_> = (1_u8..=8)
+                .map(|byte| thread::spawn(move || (byte, seed([byte; 16]))))
+                .collect();
+            let results: Vec<_> = seeders
+                .into_iter()
+                .map(|seeder| seeder.join().unwrap())
+                .collect();
+            let winners: Vec<_> = results
+                .iter()
+                .filter_map(|&(byte, installed)| installed.then_some(byte))
+                .collect();
+            assert_eq!(winners.len(), 1);
+            let expected_word = u32::from_le_bytes([winners[0]; 4]);
+            assert!(
+                KEY.iter()
+                    .all(|word| word.load(Ordering::SeqCst) == expected_word)
+            );
 
-            seed([1; 16]);
             let workers: Vec<_> = (0..8)
                 .map(|_| thread::spawn(|| (0..128).map(|_| reserve_block().1).collect::<Vec<_>>()))
                 .collect();
@@ -202,10 +221,13 @@ mod supported {
             counters.sort_unstable();
             assert_eq!(counters, (0..1024).collect::<Vec<_>>());
 
-            seed([2; 16]);
+            assert!(!seed([0xff; 16]));
+            let (key, counter) = reserve_block();
+            assert_eq!(key, [expected_word; 4]);
+            assert_eq!(counter, 1024);
+
             BLOCK_COUNTER.store(u32::MAX, Ordering::SeqCst);
             assert!(panic::catch_unwind(next_u64).is_err());
-            seed([0; 16]);
         }
     }
 }

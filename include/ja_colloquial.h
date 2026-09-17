@@ -87,10 +87,11 @@ typedef struct ja_colloquial_verse {
 extern "C" {
 #endif
 
-/* Installs a 128-bit key and restarts the global random stream.
+/* Installs the process-wide 128-bit key only if it is still unset.
  * The key is little-endian a followed by little-endian b.
- * Always seed with unpredictable values when possible. */
-void ja_colloquial_seed(uint64_t a, uint64_t b);
+ * Call this as early as possible with unpredictable values.
+ * Returns 0 when this call installs the key, or -1 if already seeded. */
+int ja_colloquial_seed(uint64_t a, uint64_t b);
 
 /* Returns JA_COLLOQUIAL_BOOK_COUNT. */
 int ja_colloquial_book_count(void);
@@ -110,7 +111,7 @@ ja_colloquial_verse_t ja_colloquial_get_verse(
 );
 
 /* Returns a uniformly selected verse. The unseeded stream is deterministic
- * and publicly predictable; call ja_colloquial_seed whenever possible. */
+ * and publicly predictable; call ja_colloquial_seed as early as possible. */
 ja_colloquial_verse_t ja_colloquial_random_verse(void);
 
 #ifdef __cplusplus

@@ -210,12 +210,15 @@ impl Verse {
     }
 }
 
-/// Installs a 128-bit key and resets the crate-global random sequence.
+/// Installs the crate-global 128-bit random key if it is still unset.
 ///
-/// The key bytes are interpreted as four little-endian words. Reseeding with
-/// the same key intentionally restarts the same deterministic sequence.
-pub fn seed(seed: [u8; 16]) {
-    random::seed(seed);
+/// Returns `true` when this call installed the key. Once any call succeeds,
+/// every later call is a no-op and returns `false`. The key bytes are
+/// interpreted as four little-endian words. Call this as early as possible so
+/// another caller cannot install a weaker key first.
+#[must_use = "check whether this call installed the one-time random seed"]
+pub fn seed(seed: [u8; 16]) -> bool {
+    random::seed(seed)
 }
 
 #[cfg(test)]

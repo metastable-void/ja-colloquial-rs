@@ -42,11 +42,11 @@ fn positive(value: c_int) -> Option<usize> {
 // SAFETY: the globally unique project prefix makes the unmangled symbol an
 // intentional part of the C ABI and prevents collisions with generic names.
 #[unsafe(no_mangle)]
-extern "C" fn ja_colloquial_seed(a: u64, b: u64) {
+extern "C" fn ja_colloquial_seed(a: u64, b: u64) -> c_int {
     let mut bytes = [0_u8; 16];
     bytes[..8].copy_from_slice(&a.to_le_bytes());
     bytes[8..].copy_from_slice(&b.to_le_bytes());
-    crate::seed(bytes);
+    if crate::seed(bytes) { 0 } else { -1 }
 }
 
 // SAFETY: the globally unique project prefix makes the unmangled symbol an

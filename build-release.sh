@@ -9,6 +9,12 @@ target_root="${RELEASE_TARGET_ROOT:-target/release-build}"
 build_std_toolchain="${ZIGBUILD_BUILD_STD_TOOLCHAIN:-nightly}"
 project_dir="$(pwd -P)"
 tmp="${TMPDIR:-/tmp}/ja-colloquial-release.$$"
+version="$(awk -F '"' '/^version = "/ { print $2; exit }' Cargo.toml)"
+
+if [ -z "$version" ]; then
+    printf 'cannot determine package version from Cargo.toml\n' >&2
+    exit 1
+fi
 
 default_cross_targets='
 x86_64-unknown-linux-musl
@@ -133,103 +139,192 @@ prepare_source() {
     printf '%s\n' "$source_dir"
 }
 
-run_cross() {
+prepare_example_source() {
     target="$1"
-    source_dir="$2"
-    cargo_target_dir="$3"
+    source_dir="${tmp}/example-source-${target}"
+    mkdir -p "$source_dir"
+    cp -R "$project_dir/src" "$source_dir/src"
+    cp -R "$project_dir/include" "$source_dir/include"
+    cp -R "$project_dir/examples" "$source_dir/examples"
+    cp "$project_dir/build.rs" "$source_dir/build.rs"
+    cp "$project_dir/Cargo.toml" "$source_dir/Cargo.toml"
+    cp "$project_dir/Cargo.lock" "$source_dir/Cargo.lock"
+    cp "$project_dir/README.md" "$source_dir/README.md"
+    cp "$project_dir/CHANGELOG.md" "$source_dir/CHANGELOG.md"
+    cp "$project_dir/LICENSE" "$source_dir/LICENSE"
+    printf '%s\n' "$source_dir"
+}
+
+run_cross() {
+    run_target="$1"
+    run_source_dir="$2"
+    run_target_dir="$3"
     (
-        cd "$source_dir"
+        cd "$run_source_dir"
         "$cross_bin" build \
-            --target-dir "$cargo_target_dir" \
+            --locked \
+            --target-dir "$run_target_dir" \
             --profile capi \
-            --target "$target" \
+            --target "$run_target" \
             --lib
     )
 }
 
+run_cross_example() {
+    run_target="$1"
+    run_source_dir="$2"
+    run_target_dir="$3"
+    (
+        cd "$run_source_dir"
+        "$cross_bin" build \
+            --locked \
+            --target-dir "$run_target_dir" \
+            --profile capi \
+            --target "$run_target" \
+            --example ja-colloquial
+    )
+}
+
 run_zigbuild() {
-    target="$1"
-    source_dir="$2"
-    cargo_target_dir="$3"
-    if is_darwin_target "$target" && [ -L "${tmp}/sdk-${target}" ]; then
+    run_target="$1"
+    run_source_dir="$2"
+    run_target_dir="$3"
+    if is_darwin_target "$run_target" && [ -L "${tmp}/sdk-${run_target}" ]; then
         (
-            cd "$source_dir"
-            SDKROOT="../sdk-${target}" "$zigbuild_bin" zigbuild \
-                --target-dir "$cargo_target_dir" \
+            cd "$run_source_dir"
+            SDKROOT="../sdk-${run_target}" "$zigbuild_bin" zigbuild \
+                --locked \
+                --target-dir "$run_target_dir" \
                 --profile capi \
-                --target "$target" \
+                --target "$run_target" \
                 --lib
         )
     else
         (
-            cd "$source_dir"
+            cd "$run_source_dir"
             "$zigbuild_bin" zigbuild \
-                --target-dir "$cargo_target_dir" \
+                --locked \
+                --target-dir "$run_target_dir" \
                 --profile capi \
-                --target "$target" \
+                --target "$run_target" \
                 --lib
         )
     fi
 }
 
+run_zigbuild_example() {
+    run_target="$1"
+    run_source_dir="$2"
+    run_target_dir="$3"
+    if is_darwin_target "$run_target" && [ -L "${tmp}/sdk-${run_target}" ]; then
+        (
+            cd "$run_source_dir"
+            SDKROOT="../sdk-${run_target}" "$zigbuild_bin" zigbuild \
+                --locked \
+                --target-dir "$run_target_dir" \
+                --profile capi \
+                --target "$run_target" \
+                --example ja-colloquial
+        )
+    else
+        (
+            cd "$run_source_dir"
+            "$zigbuild_bin" zigbuild \
+                --locked \
+                --target-dir "$run_target_dir" \
+                --profile capi \
+                --target "$run_target" \
+                --example ja-colloquial
+        )
+    fi
+}
+
 run_zigbuild_build_std() {
-    target="$1"
-    source_dir="$2"
-    cargo_target_dir="$3"
+    run_target="$1"
+    run_source_dir="$2"
+    run_target_dir="$3"
     rustup component add rust-src --toolchain "$build_std_toolchain"
     (
-        cd "$source_dir"
+        cd "$run_source_dir"
         cargo "+$build_std_toolchain" zigbuild \
             -Z build-std=core \
-            --target-dir "$cargo_target_dir" \
+            --locked \
+            --target-dir "$run_target_dir" \
             --profile capi \
-            --target "$target" \
+            --target "$run_target" \
             --lib
     )
 }
 
-archive_target() {
-    target="$1"
-    cargo_target_dir="$2"
-    build_dir="${cargo_target_dir}/${target}/capi"
-    stage="${tmp}/archive-${target}"
-    archive="${out_dir}/release-${target}.tar.gz"
+run_zigbuild_example_build_std() {
+    run_target="$1"
+    run_source_dir="$2"
+    run_target_dir="$3"
+    (
+        cd "$run_source_dir"
+        cargo "+$build_std_toolchain" zigbuild \
+            -Z build-std=std,panic_abort \
+            --locked \
+            --target-dir "$run_target_dir" \
+            --profile capi \
+            --target "$run_target" \
+            --example ja-colloquial
+    )
+}
 
-    mkdir -p "$stage/include" "$stage/lib"
+archive_target() {
+    archive_target_name="$1"
+    archive_library_target_dir="$2"
+    archive_example_target_dir="$3"
+    build_dir="${archive_library_target_dir}/${archive_target_name}/capi"
+    example_build_dir="${archive_example_target_dir}/${archive_target_name}/capi/examples"
+    stage="${tmp}/archive-${archive_target_name}"
+    archive="${out_dir}/ja-colloquial-${version}-${archive_target_name}.tar.gz"
+
+    mkdir -p "$stage/bin" "$stage/include" "$stage/lib"
     cp "$project_dir/LICENSE" "$stage/LICENSE"
     cp "$project_dir/README.md" "$stage/README.md"
     cp "$project_dir/CHANGELOG.md" "$stage/CHANGELOG.md"
     cp "$project_dir/include/ja_colloquial.h" "$stage/include/ja_colloquial.h"
     cp "$build_dir/libja_colloquial.a" "$stage/lib/libja_colloquial.a"
+    cp "$example_build_dir/ja-colloquial" "$stage/bin/ja-colloquial"
 
-    if ! is_musl_target "$target"; then
-        suffix="$(dynamic_suffix "$target")"
+    if ! is_musl_target "$archive_target_name"; then
+        suffix="$(dynamic_suffix "$archive_target_name")"
         cp "$build_dir/libja_colloquial.${suffix}" \
             "$stage/lib/libja_colloquial.${suffix}"
     fi
 
     (
         cd "$stage"
-        tar -cf - LICENSE README.md CHANGELOG.md include lib
+        tar -cf - LICENSE README.md CHANGELOG.md bin include lib
     ) | gzip -c >"$archive"
     printf '%s\n' "$archive"
 }
 
 for target in $cross_targets; do
     source_dir="$(prepare_source "$target")"
+    example_source_dir="$(prepare_example_source "$target")"
     cargo_target_dir="${target_root}/${target}"
+    example_target_dir="${target_root}/${target}-example"
     run_cross "$target" "$source_dir" "$cargo_target_dir"
-    archive_target "$target" "$cargo_target_dir"
+    run_cross_example "$target" "$example_source_dir" "$example_target_dir"
+    archive_target "$target" "$cargo_target_dir" "$example_target_dir"
 done
 
 for target in $zigbuild_targets; do
     source_dir="$(prepare_source "$target")"
+    example_source_dir="$(prepare_example_source "$target")"
     cargo_target_dir="${target_root}/${target}"
+    example_target_dir="${target_root}/${target}-example"
     if requires_build_std "$target"; then
         run_zigbuild_build_std "$target" "$source_dir" "$cargo_target_dir"
+        run_zigbuild_example_build_std \
+            "$target" "$example_source_dir" "$example_target_dir"
     else
         rustup target add "$target"
         run_zigbuild "$target" "$source_dir" "$cargo_target_dir"
+        run_zigbuild_example "$target" "$example_source_dir" "$example_target_dir"
     fi
-    archive_target "$target" "$cargo_target_dir"
+    archive_target "$target" "$cargo_target_dir" "$example_target_dir"
 done

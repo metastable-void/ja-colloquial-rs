@@ -650,7 +650,7 @@ fn generate_header() -> Result<String, std::fmt::Error> {
     writeln!(output)?;
     writeln!(
         output,
-        "/* Installs a 128-bit key and restarts the global random stream."
+        "/* Installs the process-wide 128-bit key only if it is still unset."
     )?;
     writeln!(
         output,
@@ -658,9 +658,13 @@ fn generate_header() -> Result<String, std::fmt::Error> {
     )?;
     writeln!(
         output,
-        " * Always seed with unpredictable values when possible. */"
+        " * Call this as early as possible with unpredictable values."
     )?;
-    writeln!(output, "void ja_colloquial_seed(uint64_t a, uint64_t b);")?;
+    writeln!(
+        output,
+        " * Returns 0 when this call installs the key, or -1 if already seeded. */"
+    )?;
+    writeln!(output, "int ja_colloquial_seed(uint64_t a, uint64_t b);")?;
     writeln!(output)?;
     writeln!(output, "/* Returns JA_COLLOQUIAL_BOOK_COUNT. */")?;
     writeln!(output, "int ja_colloquial_book_count(void);")?;
@@ -703,7 +707,7 @@ fn generate_header() -> Result<String, std::fmt::Error> {
     )?;
     writeln!(
         output,
-        " * and publicly predictable; call ja_colloquial_seed whenever possible. */"
+        " * and publicly predictable; call ja_colloquial_seed as early as possible. */"
     )?;
     writeln!(
         output,
