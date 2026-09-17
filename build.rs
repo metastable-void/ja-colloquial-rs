@@ -3,6 +3,7 @@ use std::env;
 use std::fmt::Write as _;
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::process::Command;
 
 const EXPECTED_VERSES: usize = 31_086;
 const EXPECTED_CHAPTERS: usize = 1_189;
@@ -740,8 +741,62 @@ fn compare_header(path: &Path, generated: &str, generated_path: &Path) -> Result
     Ok(())
 }
 
+fn target_tool(variable: &str, target: &str, default_suffix: &str) -> std::ffi::OsString {
+    let target_variable = format!("{variable}_{target}");
+    let underscored_variable = target_variable.replace('-', "_");
+    let cargo_variable = format!("TARGET_{variable}");
+    env::var_os(&target_variable)
+        .or_else(|| env::var_os(underscored_variable))
+        .or_else(|| env::var_os(cargo_variable))
+        .or_else(|| env::var_os(variable))
+        .unwrap_or_else(|| format!("{target}-{default_suffix}").into())
+}
+
+fn run_tool(command: &mut Command, description: &str) -> Result<(), String> {
+    let status = command
+        .status()
+        .map_err(|error| format!("cannot run {description}: {error}"))?;
+    if !status.success() {
+        return Err(format!("{description} failed with {status}"));
+    }
+    Ok(())
+}
+
+fn build_netbsd_execinfo_stub(out_dir: &Path) -> Result<(), String> {
+    let target =
+        env::var("TARGET").map_err(|error| format!("Cargo did not set TARGET: {error}"))?;
+    if !target.ends_with("-unknown-netbsd") {
+        return Ok(());
+    }
+
+    let source = Path::new("src/netbsd_execinfo_stub.c");
+    let object = out_dir.join("netbsd_execinfo_stub.o");
+    let archive = out_dir.join("libexecinfo.a");
+    let compiler = target_tool("CC", &target, "gcc");
+    let archiver = target_tool("AR", &target, "ar");
+
+    run_tool(
+        Command::new(compiler)
+            .arg("-c")
+            .arg("-fPIC")
+            .arg(source)
+            .arg("-o")
+            .arg(&object),
+        "NetBSD C compiler for the libexecinfo stub",
+    )?;
+    run_tool(
+        Command::new(archiver).arg("crs").arg(&archive).arg(&object),
+        "NetBSD archiver for the libexecinfo stub",
+    )?;
+
+    println!("cargo::rustc-link-search=native={}", out_dir.display());
+    println!("cargo::rustc-link-lib=static=execinfo");
+    Ok(())
+}
+
 fn run() -> Result<(), String> {
     println!("cargo::rerun-if-changed=src/books.json");
+    println!("cargo::rerun-if-changed=src/netbsd_execinfo_stub.c");
     println!("cargo::rerun-if-changed=include/ja_colloquial.h");
     println!("cargo::rustc-check-cfg=cfg(ja_colloquial_c_artifact)");
 
@@ -753,6 +808,7 @@ fn run() -> Result<(), String> {
     let out_dir = PathBuf::from(
         env::var_os("OUT_DIR").ok_or_else(|| "Cargo did not set OUT_DIR".to_owned())?,
     );
+    build_netbsd_execinfo_stub(&out_dir)?;
     let rust = generate_rust(&data).map_err(|error| error.to_string())?;
     fs::write(out_dir.join("verses.rs"), rust)
         .map_err(|error| format!("cannot write generated verses: {error}"))?;

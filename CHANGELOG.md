@@ -9,6 +9,7 @@
 - Added a concurrency-safe ChaCha20 random verse selector with one-time
   explicit seeding.
 - Added a `std` command-line example using the dev-only `getrandom` dependency.
+- Added an in-tree `libexecinfo` fallback for cross-built NetBSD executables.
 - Added conditionally built C `staticlib` and `cdylib` artifacts with a C99/C++
   header.
 - Corrected the Japanese name of Esther and relicensed the project under

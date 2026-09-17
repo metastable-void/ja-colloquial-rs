@@ -96,7 +96,9 @@ Release maintainers can run `./build-release.sh` to build packaged libraries
 for the supported Linux musl, Darwin, FreeBSD, NetBSD, and illumos targets.
 Musl archives contain the static library; other archives contain both static
 and dynamic libraries. Every archive also contains `bin/ja-colloquial` and is
-named `ja-colloquial-<version>-<target>.tar.gz`.
+named `ja-colloquial-<version>-<target>.tar.gz`. The NetBSD cross build uses a
+small in-tree `libexecinfo` stub because the cross-rs image lacks that target
+library.
 
 ## License and source text
 
